@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>WTMUG — Dosya Paylaşım</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0f172a">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>📦 WTMUG Dosya Paylaşım</h1>
+  <span class="badge">PWA</span>
+</header>
+
+<main>
+  <p class="small" style="text-align:center;margin-bottom:20px">
+    Hangi uygulamaya girmek istiyorsun?
+  </p>
+
+  <a href="als08/index.html" class="card app-card">
+    <h2>🖥️ ALŞ08 — PeerJS</h2>
+    <p class="small">Hoca dosya seçer → QR gösterir. Öğrenci QR okutup dosyayı telefonuna indirir.</p>
+  </a>
+
+  <a href="als09/index.html" class="card app-card">
+    <h2>🔗 ALŞ09 — WebRTC (Manuel)</h2>
+    <p class="small">Bilgisayar QR gösterir, telefon okutur; telefonda biriken dosya bilgisayara aktarılır.</p>
+  </a>
+</main>
+
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js').catch(console.error);
+}
+</script>
+</body>
+</html>

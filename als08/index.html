@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ALŞ08 — Hoca/Öğrenci</title>
+<meta name="theme-color" content="#0f172a">
+<link rel="stylesheet" href="../style.css">
+
+<!-- Kütüphaneler SENKRON, sıra garantili -->
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+
+<!-- makeQR / scanQR doğrudan gömülü -->
+<script>
+window.makeQR = function (text, size = 320) {
+  if (typeof qrcode === 'undefined') throw new Error('qrcode kütüphanesi yüklenemedi');
+  const qr = qrcode(0, 'M');
+  qr.addData(text, 'Byte');
+  qr.make();
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const cells = qr.getModuleCount();
+  const cell = Math.floor(size / cells);
+  const offset = Math.floor((size - cells * cell) / 2);
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, size, size);
+  ctx.fillStyle = '#000';
+  for (let r = 0; r < cells; r++)
+    for (let c = 0; c < cells; c++)
+      if (qr.isDark(r, c)) ctx.fillRect(offset + c*cell, offset + r*cell, cell, cell);
+  return canvas;
+};
+window.scanQR = function (videoEl, onResult) {
+  if (typeof jsQR === 'undefined') throw new Error('jsQR kütüphanesi yüklenemedi');
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  let stopped = false;
+  const loop = () => {
+    if (stopped) return;
+    if (videoEl.readyState === videoEl.HAVE_ENOUGH_DATA) {
+      canvas.width = videoEl.videoWidth;
+      canvas.height = videoEl.videoHeight;
+      ctx.drawImage(videoEl, 0, 0);
+      const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const code = jsQR(img.data, img.width, img.height);
+      if (code && code.data) { stopped = true; onResult(code.data); return; }
+    }
+    requestAnimationFrame(loop);
+  };
+  requestAnimationFrame(loop);
+  return { stop: () => { stopped = true; } };
+};
+</script>
+</head>
+<body>
+
+<section id="screen-role" class="screen active" style="padding:16px">
+  <header style="position:static;background:transparent;border:0;padding:0;margin-bottom:12px">
+    <button class="back-btn" onclick="location.href='../index.html'">← Ana Ekran</button>
+  </header>
+  <h1 class="center">📡 ALŞ08 Dosya Paylaşım</h1>
+  <p class="subtitle">P2P — dosyalar sunucuya gitmez</p>
+  <div class="role-buttons">
+    <button id="btn-teacher" class="role-btn">
+      <span class="role-emoji">🖥️</span>
+      <span class="role-title">Hoca</span>
+      <span class="role-desc">Dosya gönder</span>
+    </button>
+    <button id="btn-student" class="role-btn">
+      <span class="role-emoji">📱</span>
+      <span class="role-title">Öğrenci</span>
+      <span class="role-desc">Dosya al</span>
+    </button>
+  </div>
+</section>
+
+<section id="screen-teacher" class="screen" style="padding:16px">
+  <header style="position:static;background:transparent;border:0;padding:0;margin-bottom:12px">
+    <button class="back-btn" onclick="goHome()">← Geri</button>
+    <h2 style="margin:0">🖥️ Hoca Modu</h2>
+  </header>
+  <div class="card">
+    <label class="file-label">
+      <input type="file" id="teacher-file" hidden>
+      <span id="file-info">📁 Dosya seçmek için tıkla</span>
+    </label>
+  </div>
+  <div class="card" id="qr-section" style="display:none">
+    <p class="label">Öğrenciler bu QR'ı okutabilir:</p>
+    <div id="qr-box"></div>
+    <p class="label">veya ID'yi elle girin:</p>
+    <div class="peer-id" id="peer-id">—</div>
+    <button class="copy-btn" onclick="copyId()">📋 Kopyala</button>
+  </div>
+  <div class="card" id="log-section" style="display:none">
+    <h3>📊 Gönderim Günlüğü</h3>
+    <p><strong>Bağlı öğrenci:</strong> <span id="student-count">0</span></p>
+    <div id="log-list"></div>
+  </div>
+</section>
+
+<section id="screen-student" class="screen" style="padding:16px">
+  <header style="position:static;background:transparent;border:0;padding:0;margin-bottom:12px">
+    <button class="back-btn" onclick="goHome()">← Geri</button>
+    <h2 style="margin:0">📱 Öğrenci Modu</h2>
+  </header>
+  <div class="card">
+    <label class="label">Hocanın ID'sini girin:</label>
+    <input type="text" id="teacher-id-input" placeholder="örn: abc-123-xyz">
+    <button id="btn-connect" style="margin-top:8px">Bağlan</button>
+    <button id="btn-scan-qr" style="display:none;margin-top:8px">📷 Kamera ile QR Okut</button>
+  </div>
+  <div class="card" id="scan-section" style="display:none">
+    <video id="scan-video" playsinline></video>
+    <button onclick="stopScanner()" style="margin-top:8px;width:100%">Kapat</button>
+  </div>
+  <div class="card" id="receive-section" style="display:none">
+    <h3>📥 Alınan Dosya</h3>
+    <p id="receive-name">—</p>
+    <progress id="receive-progress" value="0" max="100"></progress>
+    <p id="receive-status">Bekleniyor...</p>
+    <a id="download-btn" style="display:none;background:#38bdf8;color:#03212f;padding:12px;border-radius:8px;text-align:center;text-decoration:none;font-weight:600" download>💾 İndir</a>
+    <p class="small" style="margin-top:12px">
+      ℹ️ Dosya telefona indirildi. Şimdi <a href="../als09/index.html" style="color:#38bdf8">ALŞ09</a>'a girip bilgisayarına aktarabilirsin.
+    </p>
+  </div>
+</section>
+
+<script src="als08.js"></script>
+</body>
+</html>

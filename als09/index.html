@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ALŞ09 — Bilgisayar</title>
+<meta name="theme-color" content="#0f172a">
+<link rel="stylesheet" href="../style.css">
+
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+<script>
+window.makeQR = function (text, size = 320) {
+  if (typeof qrcode === 'undefined') throw new Error('qrcode yüklenemedi');
+  const qr = qrcode(0, 'M');
+  qr.addData(text, 'Byte');
+  qr.make();
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const cells = qr.getModuleCount();
+  const cell = Math.floor(size / cells);
+  const offset = Math.floor((size - cells * cell) / 2);
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, size, size);
+  ctx.fillStyle = '#000';
+  for (let r = 0; r < cells; r++)
+    for (let c = 0; c < cells; c++)
+      if (qr.isDark(r, c)) ctx.fillRect(offset + c*cell, offset + r*cell, cell, cell);
+  return canvas;
+};
+window.scanQR = function (videoEl, onResult) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  let stopped = false;
+  const loop = () => {
+    if (stopped) return;
+    if (videoEl.readyState === videoEl.HAVE_ENOUGH_DATA) {
+      canvas.width = videoEl.videoWidth;
+      canvas.height = videoEl.videoHeight;
+      ctx.drawImage(videoEl, 0, 0);
+      const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const code = jsQR(img.data, img.width, img.height);
+      if (code && code.data) { stopped = true; onResult(code.data); return; }
+    }
+    requestAnimationFrame(loop);
+  };
+  requestAnimationFrame(loop);
+  return { stop: () => { stopped = true; } };
+};
+</script>
+</head>
+<body>
+<header>
+  <button class="back-btn" onclick="location.href='../index.html'">← Ana Ekran</button>
+  <h1>🖥️ ALŞ09 — Bilgisayar</h1>
+  <span id="state" class="badge">bağlantı yok</span>
+</header>
+
+<main>
+  <section id="step-offer" class="card">
+    <h2>1) Telefonla QR'ı okutun</h2>
+    <p class="small">Bu QR, WebRTC teklifini (offer) içerir. Telefonunuzdaki <b>mobile.html</b> sayfası ile okutun.</p>
+    <div class="qr-box"><div id="offerQR">⏳ QR hazırlanıyor...</div></div>
+    <details style="margin-top:10px">
+      <summary class="small">QR okutamıyorsanız – metni kopyalayın</summary>
+      <textarea id="offerText" readonly></textarea>
+      <button class="secondary" id="copyOffer">Kopyala</button>
+    </details>
+  </section>
+
+  <section id="step-answer" class="card hidden">
+    <h2>2) Telefondaki cevabı okutun</h2>
+    <p class="small">Telefon, QR okutunca size bir cevap QR'ı gösterecek. Kamerayı açıp onu okutun.</p>
+    <button id="startCam">📷 Kamerayı Aç</button>
+    <video id="video" class="hidden" autoplay playsinline muted></video>
+    <details style="margin-top:10px">
+      <summary class="small">Kamera yok / QR okutamıyorum – metni yapıştırın</summary>
+      <textarea id="answerText" placeholder="Telefondan gelen JSON'u buraya yapıştırın"></textarea>
+      <button id="applyAnswer">Uygula</button>
+    </details>
+  </section>
+
+  <section id="step-chat" class="card hidden">
+    <h2>💬 Sohbet</h2>
+    <div id="chat"></div>
+    <div class="row" style="margin-top:10px">
+      <input type="text" id="msg" placeholder="Mesaj yazın…">
+      <button id="sendMsg">Gönder</button>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <input type="file" id="file" multiple>
+      <button id="sendFile">Dosya Gönder</button>
+      <button class="secondary" id="disconnect">Bağlantıyı Kes</button>
+    </div>
+  </section>
+</main>
+
+<script type="module">
+import { P2P } from './p2p.js';
+import { addMessage, addFileCard, makeProgress } from './ui.js';
+
+const $ = (id) => document.getElementById(id);
+const setState = (s, cls) => { $('state').textContent = s; $('state').className = 'badge ' + (cls || ''); };
+const chatEl = $('chat');
+let activeProgress = null;
+
+const p2p = new P2P({
+  onState: (s) => {
+    setState(s, s === 'connected' ? 'ok' : s === 'connecting' ? 'warn' : s === 'failed' || s === 'error' ? 'err' : '');
+    if (s === 'connected') {
+      $('step-answer').classList.add('hidden');
+      $('step-chat').classList.remove('hidden');
+      stopCam();
+    }
+  },
+  onMessage: ({ text }) => addMessage(chatEl, { who: 'them', text }),
+  onFileStart: (info) => {
+    activeProgress = makeProgress(chatEl);
+    activeProgress.update(0, info.size, 'recv');
+  },
+  onFileProgress: ({ direction, loaded, total }) => {
+    if (direction === 'recv' && activeProgress) activeProgress.update(loaded, total, 'recv');
+  },
+  onFileDone: ({ name, type, size, blob }) => {
+    activeProgress?.remove(); activeProgress = null;
+    const url = URL.createObjectURL(blob);
+    addFileCard(chatEl, { who: 'them', name, type, size, url });
+  }
+});
+
+(async () => {
+  try {
+    const offerJson = await p2p.createOffer();
+    $('offerText').value = offerJson;
+    const canvas = makeQR(offerJson, 320);
+    $('offerQR').innerHTML = '';
+    $('offerQR').appendChild(canvas);
+    $('step-answer').classList.remove('hidden');
+    setState('offer hazır', 'warn');
+  } catch (e) {
+    console.error('Offer/QR hatası:', e);
+    $('offerQR').textContent = '❌ QR üretilemedi: ' + e.message;
+    setState('hata', 'err');
+  }
+})();
+
+$('copyOffer').onclick = () => {
+  navigator.clipboard.writeText($('offerText').value);
+  $('copyOffer').textContent = 'Kopyalandı ✓';
+  setTimeout(() => $('copyOffer').textContent = 'Kopyala', 1200);
+};
+
+let camStop = null;
+function stopCam() {
+  camStop?.(); camStop = null;
+  const v = $('video');
+  v.srcObject?.getTracks().forEach(t => t.stop());
+  v.srcObject = null;
+  v.classList.add('hidden');
+}
+
+$('startCam').onclick = async () => {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    const v = $('video');
+    v.srcObject = stream;
+    v.classList.remove('hidden');
+    await v.play();
+    camStop = scanQR(v, async (data) => {
+      stopCam();
+      await applyAnswer(data);
+    });
+  } catch (e) {
+    alert('Kamera açılamadı: ' + e.message);
+  }
+};
+
+$('applyAnswer').onclick = () => applyAnswer($('answerText').value.trim());
+
+async function applyAnswer(text) {
+  if (!text) return;
+  try {
+    await p2p.acceptAnswer(text);
+    setState('bağlanıyor…', 'warn');
+  } catch (e) {
+    alert('Cevap uygulanamadı: ' + e.message);
+  }
+}
+
+$('sendMsg').onclick = () => {
+  const t = $('msg').value.trim();
+  if (!t) return;
+  if (p2p.sendText(t)) {
+    addMessage(chatEl, { who: 'me', text: t });
+    $('msg').value = '';
+  }
+};
+$('msg').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('sendMsg').click(); });
+
+$('sendFile').onclick = async () => {
+  const files = Array.from($('file').files);
+  for (const f of files) {
+    const url = URL.createObjectURL(f);
+    addFileCard(chatEl, { who: 'me', name: f.name, type: f.type, size: f.size, url });
+    const prog = makeProgress(chatEl);
+    prog.update(0, f.size, 'send');
+    await p2p.sendFile(f, f.name);
+    prog.remove();
+  }
+  $('file').value = '';
+};
+
+$('disconnect').onclick = () => {
+  p2p.close();
+  $('step-chat').classList.add('hidden');
+  $('step-answer').classList.remove('hidden');
+};
+</script>
+</body>
+</html>
